@@ -17,9 +17,22 @@ MONGO_URI = os.getenv("MONGO_URI")
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo.telegram_vocab_bot
 cards = db.cards
+users = db.users
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+
+    await users.update_one(
+        {"user_id": user.id},
+        {
+            "$set": {
+                "username": user.username
+            }
+        },
+        upsert=True
+    )
+    
     await update.message.reply_text(
         "📚 Welcome!\n\n"
         "Use:\n"
@@ -31,15 +44,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    user_id = user.id
-    username = user.username  # <-- add this
-
     text = update.message.text.replace("/add", "").strip()
+
+    if text.startswith("@"):
+        parts = text.split(" ", 1)
+        target_username = parts[0].replace("@", "")
+        text = parts[1] if len(parts) > 1 else ""
+
+        target_user = await users.find_one({"username": target_username})
+
+        if not target_user:
+            await update.message.reply_text("❌ User not found.")
+            return
+
+        user_id = target_user["user_id"]
+    else:
+        user_id = update.effective_user.id
 
     if "=" not in text:
         await update.message.reply_text(
-            "❌ Format:\n/add word = translation"
+            "❌ Format:\n/add word = translation\nor\n/add @username word = translation"
         )
         return
 
@@ -47,14 +71,13 @@ async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await cards.insert_one({
         "user_id": user_id,
-        "username": username,   # <-- store username
         "word": word,
         "translation": translation,
         "correct_count": 0
     })
 
     await update.message.reply_text(
-        f"✅ Added for @{username}:\n{word} → {translation}"
+        f"✅ Added:\n{word} → {translation}"
     )
 
 
