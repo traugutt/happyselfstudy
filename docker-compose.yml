@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: vocab-mongo
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+
+  bot:
+    build: .
+    container_name: vocab-bot
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+
