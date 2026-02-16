@@ -16,7 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 
 # 🔒 Replace with your Telegram user ID
-TEACHER_ID = "traugutt"  
+TEACHER_ID = 123456789  
 
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo.telegram_vocab_bot
@@ -94,3 +94,129 @@ async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✅ Added:\n{word} → {translation}"
     )
+
+
+# -------------------- STUDY --------------------
+
+async def study(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    count = await cards.count_documents({"user_id": user_id})
+
+    if count == 0:
+        await update.message.reply_text("📭 No words yet.")
+        return
+
+    random_index = random.randint(0, count - 1)
+
+    cursor = cards.find({"user_id": user_id}).skip(random_index).limit(1)
+    card = await cursor.to_list(length=1)
+    card = card[0]
+
+    context.user_data["current_card_id"] = str(card["_id"])
+    context.user_data["current_answer"] = card["word"]
+
+    await update.message.reply_text(
+        f"🧠 Translate:\n\n**{card['translation']}**",
+        parse_mode="Markdown"
+    )
+
+
+# -------------------- RUN --------------------
+
+async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    count = await cards.count_documents({"user_id": user_id})
+
+    if count == 0:
+        await update.message.reply_text("📭 No words yet.")
+        return
+
+    random_index = random.randint(0, count - 1)
+
+    cursor = cards.find({"user_id": user_id}).skip(random_index).limit(1)
+    card = await cursor.to_list(length=1)
+    card = card[0]
+
+    await update.message.reply_text(
+        f"{card['word']}  {card['translation']}"
+    )
+
+
+# -------------------- CHECK ANSWER --------------------
+
+async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "current_answer" not in context.user_data:
+        return
+
+    user_answer = update.message.text.strip()
+    correct = context.user_data.pop("current_answer")
+    card_id = context.user_data.pop("current_card_id")
+
+    if user_answer.lower() == correct.lower():
+        card = await cards.find_one_and_update(
+            {"_id": ObjectId(card_id)},
+            {"$inc": {"correct_count": 1}},
+            return_document=ReturnDocument.AFTER
+        )
+
+        new_count = card["correct_count"]
+
+        if new_count >= 6:
+            await cards.delete_one({"_id": ObjectId(card_id)})
+            await update.message.reply_text(
+                "🎉 Correct!\n\nThis word is mastered and removed 🧠✨"
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ Correct!\nProgress: {new_count}/6"
+            )
+    else:
+        await update.message.reply_text(
+            f"❌ Nope\nCorrect: **{correct}**",
+            parse_mode="Markdown"
+        )
+
+
+# -------------------- DELETE --------------------
+
+async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+
+    result = await cards.delete_many({"user_id": user_id})
+
+    if result.deleted_count == 0:
+        await update.message.reply_text("📭 Nothing to delete.")
+    else:
+        await update.message.reply_text(
+            f"🗑 Deleted {result.deleted_count} words."
+        )
+
+
+# -------------------- ERROR HANDLER --------------------
+
+async def error_handler(update, context):
+    print(f"Exception: {context.error}")
+
+
+# -------------------- MAIN --------------------
+
+def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_card))
+    app.add_handler(CommandHandler("study", study))
+    app.add_handler(CommandHandler("run", run))
+    app.add_handler(CommandHandler("delete", delete_all))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_answer))
+
+    app.add_error_handler(error_handler)
+
+    print("🤖 Bot running...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
