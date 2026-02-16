@@ -31,7 +31,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id
+    username = user.username  # <-- add this
+
     text = update.message.text.replace("/add", "").strip()
 
     if "=" not in text:
@@ -44,12 +47,15 @@ async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await cards.insert_one({
         "user_id": user_id,
+        "username": username,   # <-- store username
         "word": word,
         "translation": translation,
         "correct_count": 0
     })
 
-    await update.message.reply_text(f"✅ Added:\n{word} → {translation}")
+    await update.message.reply_text(
+        f"✅ Added for @{username}:\n{word} → {translation}"
+    )
 
 
 async def study(update: Update, context: ContextTypes.DEFAULT_TYPE):
