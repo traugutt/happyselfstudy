@@ -69,12 +69,15 @@ async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         target_user = await users.find_one({"username": target_username})
 
         if not target_user:
-            await update.message.reply_text("❌ User not found.")
-            return
-
-        user_id = target_user["user_id"]
-    else:
-        user_id = update.effective_user.id
+            # Create placeholder user
+            result = await users.insert_one({
+                "username": target_username,
+                "user_id": None,  # unknown until they start
+                "created_by_teacher": True
+            })
+            user_id = None
+        else:
+            user_id = target_user["user_id"]
 
     if "=" not in text:
         await update.message.reply_text(
