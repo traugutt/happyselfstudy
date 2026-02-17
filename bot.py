@@ -42,10 +42,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📚 Welcome!\n\n"
         "Use:\n"
-        "/add word = translation\n"
-        "/study\n"
-        "/run\n"
-        "/delete\n"
+        "/add word = translation (add your own items)\n"
+        "/study (here you need to write answer, press again to proceed to next item)\n"
+        "/run (this one is just to go over items, press to proceed to next item)\n"
+        "/delete (delete items added by you, use carefully)\n"
     )
 
 
