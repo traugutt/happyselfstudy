@@ -16,7 +16,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 
 # 🔒 Replace with your Telegram user ID
-TEACHER_ID = "traugutt"
+TEACHER_ID = 1140145697
 
 mongo = AsyncIOMotorClient(MONGO_URI)
 db = mongo.telegram_vocab_bot
