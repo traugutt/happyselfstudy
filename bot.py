@@ -52,32 +52,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------- ADD CARD --------------------
 
 async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    username = user.username
+
+    if not username:
+        await update.message.reply_text("❌ You must set a Telegram username.")
+        return
+
     text = update.message.text.replace("/add", "").strip()
 
     # Teacher adding for student
     if text.startswith("@"):
-        if update.effective_user.id != TEACHER_ID:
-            await update.message.reply_text(
-                "❌ Only teacher can add cards for others."
-            )
+        if user.id != TEACHER_ID:
+            await update.message.reply_text("❌ Only teacher can add for others.")
             return
 
         parts = text.split(" ", 1)
-        target_username = parts[0].replace("@", "")
+        username = parts[0].replace("@", "")
         text = parts[1] if len(parts) > 1 else ""
-
-        target_user = await users.find_one({"username": target_username})
-
-        if not target_user:
-            # Create placeholder user
-            result = await users.insert_one({
-                "username": target_username,
-                "user_id": None,  # unknown until they start
-                "created_by_teacher": True
-            })
-            user_id = None
-        else:
-            user_id = target_user["user_id"]
 
     if "=" not in text:
         await update.message.reply_text(
@@ -88,23 +80,21 @@ async def add_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     word, translation = map(str.strip, text.split("=", 1))
 
     await cards.insert_one({
-        "user_id": user_id,
+        "username": username,
         "word": word,
         "translation": translation,
         "correct_count": 0
     })
 
-    await update.message.reply_text(
-        f"✅ Added:\n{word} → {translation}"
-    )
+    await update.message.reply_text(f"✅ Added:\n{word} → {translation}")
 
 
 # -------------------- STUDY --------------------
 
 async def study(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    username = update.effective_user.username
 
-    count = await cards.count_documents({"user_id": user_id})
+    count = await cards.count_documents({"username": username})
 
     if count == 0:
         await update.message.reply_text("📭 No words yet.")
@@ -112,9 +102,8 @@ async def study(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     random_index = random.randint(0, count - 1)
 
-    cursor = cards.find({"user_id": user_id}).skip(random_index).limit(1)
-    card = await cursor.to_list(length=1)
-    card = card[0]
+    cursor = cards.find({"username": username}).skip(random_index).limit(1)
+    card = (await cursor.to_list(length=1))[0]
 
     context.user_data["current_card_id"] = str(card["_id"])
     context.user_data["current_answer"] = card["word"]
@@ -128,9 +117,9 @@ async def study(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------- RUN --------------------
 
 async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    username = update.effective_user.username
 
-    count = await cards.count_documents({"user_id": user_id})
+    count = await cards.count_documents({"username": username})
 
     if count == 0:
         await update.message.reply_text("📭 No words yet.")
@@ -138,9 +127,8 @@ async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     random_index = random.randint(0, count - 1)
 
-    cursor = cards.find({"user_id": user_id}).skip(random_index).limit(1)
-    card = await cursor.to_list(length=1)
-    card = card[0]
+    cursor = cards.find({"username": username}).skip(random_index).limit(1)
+    card = (await cursor.to_list(length=1))[0]
 
     await update.message.reply_text(
         f"{card['word']}  {card['translation']}"
@@ -181,13 +169,48 @@ async def check_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
+# -------------------- LIST CARDS --------------------
+
+async def list_cards(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.message.text.replace("/list", "").strip()
+
+    username = user.username
+
+    # Teacher viewing student
+    if text.startswith("@"):
+        if user.id != TEACHER_ID:
+            await update.message.reply_text("❌ Only teacher can view others.")
+            return
+
+        username = text.replace("@", "").strip()
+
+    student_cards = await cards.find({"username": username}).to_list(length=1000)
+
+    if not student_cards:
+        await update.message.reply_text("📭 No words found.")
+        return
+
+    message = f"📚 Words for @{username}:\n\n"
+
+    for i, card in enumerate(student_cards, 1):
+        message += (
+            f"{i}. {card['word']} → {card['translation']} "
+            f"({card['correct_count']}/6)\n"
+        )
+
+    if len(message) > 4000:
+        message = message[:3900] + "\n\n... (truncated)"
+
+    await update.message.reply_text(message)
+
 
 # -------------------- DELETE --------------------
 
 async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    username = update.effective_user.username
 
-    result = await cards.delete_many({"user_id": user_id})
+    result = await cards.delete_many({"username": username})
 
     if result.deleted_count == 0:
         await update.message.reply_text("📭 Nothing to delete.")
@@ -195,7 +218,6 @@ async def delete_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"🗑 Deleted {result.deleted_count} words."
         )
-
 
 # -------------------- ERROR HANDLER --------------------
 
@@ -211,6 +233,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_card))
     app.add_handler(CommandHandler("study", study))
+    app.add_handler(CommandHandler("list", list_cards))
     app.add_handler(CommandHandler("run", run))
     app.add_handler(CommandHandler("delete", delete_all))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, check_answer))
